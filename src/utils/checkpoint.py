@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import glob
 import os
+import re
 from typing import Optional, Tuple
 
 import torch
@@ -21,8 +23,13 @@ def save_stage1_checkpoint(
     disc: torch.nn.Module,
     disc_optimizer: torch.optim.Optimizer,
     disc_scheduler: Optional[LambdaLR],
+    keep_last: Optional[int] = None,
 ) -> None:
-    """Save Stage 1 training checkpoint (model + discriminator)."""
+    """Save Stage 1 training checkpoint (model + discriminator).
+
+    keep_last: if set, delete all but the newest `keep_last` ep-*.pt in the same dir after
+    the new checkpoint is fully written (None keeps everything).
+    """
     state = {
         "step": step,
         "epoch": epoch,
@@ -35,7 +42,26 @@ def save_stage1_checkpoint(
         "disc_scheduler": disc_scheduler.state_dict() if disc_scheduler is not None else None,
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(state, path)
+    # Write-then-rename: a job killed mid-save leaves only a .tmp (ignored by resume), never a
+    # truncated .pt, so the newest .pt is always loadable.
+    tmp = path + ".tmp"
+    torch.save(state, tmp)
+    os.replace(tmp, path)
+    if keep_last:
+        prune_checkpoints(os.path.dirname(path), keep_last)
+
+
+def prune_checkpoints(checkpoint_dir: str, keep_last: int) -> None:
+    """Keep only the newest `keep_last` ep-*.pt checkpoints (by epoch) and drop stale .tmp files."""
+    ckpts = []
+    for f in glob.glob(os.path.join(checkpoint_dir, "ep-*.pt")):
+        match = re.search(r"ep-(\d+)\.pt$", f)
+        if match:
+            ckpts.append((int(match.group(1)), f))
+    for _, f in sorted(ckpts)[:-keep_last]:
+        os.remove(f)
+    for f in glob.glob(os.path.join(checkpoint_dir, "*.pt.tmp")):
+        os.remove(f)
 
 
 def load_stage1_checkpoint(
@@ -70,8 +96,13 @@ def save_stage2_checkpoint(
     ema_model: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: Optional[LambdaLR],
+    keep_last: Optional[int] = None,
 ) -> None:
-    """Save Stage 2 training checkpoint."""
+    """Save Stage 2 training checkpoint.
+
+    keep_last: if set, delete all but the newest `keep_last` ep-*.pt in the same dir after
+    the new checkpoint is fully written (None keeps everything).
+    """
     state = {
         "step": step,
         "epoch": epoch,
@@ -81,7 +112,12 @@ def save_stage2_checkpoint(
         "scheduler": scheduler.state_dict() if scheduler is not None else None,
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(state, path)
+    # Write-then-rename (see save_stage1_checkpoint): the newest .pt is always loadable.
+    tmp = path + ".tmp"
+    torch.save(state, tmp)
+    os.replace(tmp, path)
+    if keep_last:
+        prune_checkpoints(os.path.dirname(path), keep_last)
 
 
 def load_stage2_checkpoint(

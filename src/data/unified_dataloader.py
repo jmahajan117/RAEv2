@@ -1,15 +1,19 @@
 """Unified dataloader interface for RAEv2 training."""
 import random
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import List, Optional, Tuple, Union
 
 import torch
 import webdataset as wds
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Subset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision import transforms
 
+from utils.train_utils import center_crop_arr
+
+from .imagenet_folder_dataset import ImageNetFolderDataset
 from .imagenet_hf_dataset import ImageNetHFDataset
 
 T2I_HF_DATASETS = {'mscoco', 'mjhq', 'geneval', 'dpgbench', 'genaibench', 'simpleeval', 'sft_hack_datasets'}
@@ -385,6 +389,18 @@ def _prepare_t2i_hf_loader(
     )
 
 
+def _class_subset(dataset: ImageNetFolderDataset, per_class: int) -> Subset:
+    """The first `per_class` images of every class, in sorted file order (the same images every run);
+    300 gives ImageNet-300."""
+    taken = [0] * dataset.num_classes
+    indices = []
+    for idx, label in enumerate(dataset.labels.tolist()):
+        if taken[label] < per_class:
+            taken[label] += 1
+            indices.append(idx)
+    return Subset(dataset, indices)
+
+
 def _prepare_imagenet_loader(
     config: dict,
     image_size: int,
@@ -399,21 +415,39 @@ def _prepare_imagenet_loader(
     """Prepare ImageNet-style loader using existing dataset classes."""
     data_dir = config.get("data_dir", "./data/imagenet-256")
     split = config.get("split", "train")
+    is_folder = config.get("type", "hf") == "folder"
 
     # Build transform if not provided
     if transform is None:
-        transform = transforms.Compose([
-            transforms.Resize(image_size, interpolation=transforms.InterpolationMode.BICUBIC),
-            transforms.ToTensor(),
-        ])
+        if is_folder:
+            # Raw full-res images: ADM center crop (matches the pre-cropped Arrow data)
+            transform = transforms.Compose([
+                transforms.Lambda(partial(center_crop_arr, image_size=image_size)),
+                transforms.ToTensor(),
+            ])
+        else:
+            transform = transforms.Compose([
+                transforms.Resize(image_size, interpolation=transforms.InterpolationMode.BICUBIC),
+                transforms.ToTensor(),
+            ])
 
     # Create dataset based on type
-    dataset = ImageNetHFDataset(
+    dataset_cls = ImageNetFolderDataset if is_folder else ImageNetHFDataset
+    dataset = dataset_cls(
         data_dir=data_dir,
         split=split,
         transform=transform,
         condition_type=condition_type,
     )
+    # images_per_class trains on a class-balanced subset, e.g. 300 for ImageNet-300
+    images_per_class = config.get("images_per_class")
+    if images_per_class:
+        if not is_folder:
+            raise ValueError("images_per_class needs an ImageNet `type: folder` dataset")
+        full_size = len(dataset)
+        dataset = _class_subset(dataset, int(images_per_class))
+        if rank == 0:
+            print(f"ImageNet-{int(images_per_class)}: {len(dataset)} of {full_size} {split} images")
 
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=shuffle)
     loader = DataLoader(

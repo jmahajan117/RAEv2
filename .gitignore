@@ -224,6 +224,7 @@ files
 files/*
 .worktrees/
 tmp_figures/
+experiments/
 
 # Local convenience symlinks
 ./jobs

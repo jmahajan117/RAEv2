@@ -109,6 +109,10 @@ def main(args):
     # condition_type, context_dim, repa z_dim etc. are set)
     config.prepare_model_params()
 
+    if args.ckpt:
+        config.stage_2.ckpt = args.ckpt  # instantiate_from_config loads its EMA weights (strict)
+    if rank == 0 and not config.stage_2.ckpt:
+        logger.warning("  No --ckpt / stage_2.ckpt: evaluating an UNTRAINED stage-2 model")
     model: Stage2ModelProtocol = instantiate_from_config(config.stage_2).to(device)
     model.eval()
     model_fn, sample_model_kwargs = get_model_forward_fn(model, config.guidance)
@@ -169,7 +173,7 @@ def main(args):
             model_fn, eval_sampler, tuple(config.misc.latent_size), sample_model_kwargs,
             use_guidance, rae, ds_info.dataset, eval_n,
             rank=rank, world_size=world_size, device=device,
-            batch_size=micro_batch_size, experiment_dir=experiment_name,
+            batch_size=micro_batch_size, experiment_dir=os.path.join(eval_dir, experiment_name),
             global_step=global_step, autocast_kwargs=autocast_kwargs,
             reference_npz_path=ds_info.reference_npz,
             shared_tmpdir=config.dataset.shared_tmpdir,
@@ -254,6 +258,8 @@ if __name__ == "__main__":
                         help="Path to the config file")
     parser.add_argument("--precision", type=str, choices=["fp32", "bf16"], default="bf16",
                         help="Compute precision")
+    parser.add_argument("--ckpt", type=str, default=None,
+                        help="Stage-2 training checkpoint (ep-*.pt); its EMA weights are evaluated")
     parser.add_argument("--npz", type=str, default=None,
                         help="Optional: path to an existing uint8 NHWC gen NPZ. If set, "
                              "skip distributed sampling and just compute metrics on it. "

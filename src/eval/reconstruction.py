@@ -127,7 +127,7 @@ def evaluate_reconstruction_distributed(
     # Rank 0 computes metrics
     metrics = None
     if rank == 0:
-        combined_recons = gather_and_cleanup_shards(temp_dir, "recon", global_step, world_size, num_samples)
+        combined_recons = gather_and_cleanup_shards(temp_dir, "recon", global_step, world_size, num_samples, shuffle=False)
         print(f"[Eval] Combined reconstruction NPZ shape: {combined_recons.shape}")
 
         ref_npz_path = reference_npz_path

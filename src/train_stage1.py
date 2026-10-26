@@ -58,6 +58,7 @@ def main():
     # Dataset and dataloader (unified)
     #########################################################
     batch_size = config.training.global_batch_size // world_size if config.training.global_batch_size else config.training.batch_size
+    logger.info(f"Batch size: {batch_size}/GPU x {world_size} GPUs = {batch_size * world_size} global")
     dataloader_result = prepare_unified_dataloader(
         config=dataclasses.asdict(config.dataset),
         image_size=config.training.image_size,
@@ -177,6 +178,7 @@ def main():
         save_stage1_checkpoint(
             f"{checkpoint_dir}/ep-{config.training.epochs:07d}.pt", global_step, config.training.epochs,
             ddp_model, ema_model, optimizer, scheduler, discriminator, disc_optimizer, disc_scheduler,
+            keep_last=config.training.keep_last_checkpoints,
         )
         if args.sync_checkpoints:
             sync_checkpoint_blocking(checkpoint_dir, logger)

@@ -67,7 +67,22 @@ def generate_run_id(exp_name):
     return str(int(hashlib.sha256(exp_name.encode('utf-8')).hexdigest(), 16) % 10 ** 8)
 
 
-def initialize(args, entity, exp_name, project_name):
+def get_run_id(exp_name, run_dir=None):
+    """Run id persisted in run_dir, so resumes continue the same W&B run while a fresh
+    experiment dir gets a new id (W&B never lets a deleted run's id be reused)."""
+    if run_dir is None:
+        return generate_run_id(exp_name)
+    id_file = os.path.join(run_dir, "wandb_run_id.txt")
+    if os.path.exists(id_file):
+        with open(id_file) as f:
+            return f.read().strip()
+    run_id = wandb.util.generate_id()
+    with open(id_file, "w") as f:
+        f.write(run_id)
+    return run_id
+
+
+def initialize(args, entity, exp_name, project_name, run_dir=None):
     config_dict = namespace_to_dict(args)
     if is_main_process():
         if "WANDB_KEY" in os.environ:
@@ -80,7 +95,7 @@ def initialize(args, entity, exp_name, project_name):
             project=project_name,
             name=exp_name,
             config=config_dict,
-            id=generate_run_id(exp_name),
+            id=get_run_id(exp_name, run_dir),
             resume="allow",
             reinit=True,
         )

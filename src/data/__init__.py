@@ -2,6 +2,7 @@
 
 from .blip3o_wds_dataset import BLIP3O_METADATA, BLIP3OWebDataset
 from .imagenet_classes import IMAGENET_CLASSES
+from .imagenet_folder_dataset import ImageNetFolderDataset
 from .imagenet_hf_dataset import ImageNetHFDataset
 from .unified_dataloader import (
     DataloaderResult,
@@ -11,6 +12,7 @@ from .unified_dataloader import (
 from .wds_image_dataset import GENERIC_WDS_METADATA, GenericWebDataset
 
 __all__ = [
+    "ImageNetFolderDataset",
     "ImageNetHFDataset",
     "IMAGENET_CLASSES",
     "prepare_unified_dataloader",

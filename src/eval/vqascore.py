@@ -4,7 +4,6 @@ import torch
 import numpy as np
 from PIL import Image
 from typing import List
-from t2v_metrics import VQAScore
 
 
 class VQAScoreEvaluator:
@@ -17,6 +16,7 @@ class VQAScoreEvaluator:
 
     def _ensure_loaded(self):
         if self.scorer is None:
+            from t2v_metrics import VQAScore  # heavy import; prints errors for missing optional models
             self.scorer = VQAScore(model=self.model_name, device=self.device)
 
     @torch.no_grad()

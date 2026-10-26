@@ -625,7 +625,7 @@ wheels = [
 [[package]]
 name = "dpg-evaluator"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=dpgbench&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
+source = { git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=dpgbench&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'linux'" },
@@ -679,7 +679,7 @@ wheels = [
 [[package]]
 name = "fd-evaluator"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=fd_evaluator&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
+source = { git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=fd_evaluator&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
 dependencies = [
     { name = "huggingface-hub", marker = "sys_platform == 'linux'" },
     { name = "numpy", marker = "sys_platform == 'linux'" },
@@ -824,7 +824,7 @@ wheels = [
 [[package]]
 name = "geneval-evaluator"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=geneval&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
+source = { git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=geneval&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "pandas", marker = "sys_platform == 'linux'" },
@@ -861,7 +861,7 @@ wheels = [
 [[package]]
 name = "gram-newton-schulz"
 version = "0.0.1"
-source = { git = "ssh://git@github.com/nanovisionx/gmuon.git?branch=main#4863cc2446f09a54d937c579d4e775c125f5ab2e" }
+source = { git = "https://github.com/nanovisionx/gmuon.git?branch=main#4863cc2446f09a54d937c579d4e775c125f5ab2e" }
 dependencies = [
     { name = "torch", marker = "sys_platform == 'linux'" },
 ]
@@ -2473,11 +2473,11 @@ requires-dist = [
     { name = "datasets", specifier = "==4.4.2" },
     { name = "dictdot", specifier = "==1.5.1" },
     { name = "diffusers", specifier = "==0.36.0" },
-    { name = "dpg-evaluator", git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=dpgbench&branch=main" },
+    { name = "dpg-evaluator", git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=dpgbench&branch=main" },
     { name = "einops", specifier = "==0.8.1" },
-    { name = "fd-evaluator", git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=fd_evaluator&branch=main" },
-    { name = "geneval-evaluator", git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=geneval&branch=main" },
-    { name = "gram-newton-schulz", git = "ssh://git@github.com/nanovisionx/gmuon.git?branch=main" },
+    { name = "fd-evaluator", git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=fd_evaluator&branch=main" },
+    { name = "geneval-evaluator", git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=geneval&branch=main" },
+    { name = "gram-newton-schulz", git = "https://github.com/nanovisionx/gmuon.git?branch=main" },
     { name = "hf-transfer", specifier = ">=0.1.9" },
     { name = "lpips", specifier = "==0.1.4" },
     { name = "numpy", specifier = "==2.2.6" },
@@ -2490,7 +2490,7 @@ requires-dist = [
     { name = "safetensors", specifier = "==0.7.0" },
     { name = "scipy", specifier = "==1.15.3" },
     { name = "sentencepiece", specifier = "==0.2.1" },
-    { name = "t2v-metrics", git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=t2v_metrics&branch=main" },
+    { name = "t2v-metrics", git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=t2v_metrics&branch=main" },
     { name = "tabulate", specifier = "==0.10.0" },
     { name = "termcolor" },
     { name = "timm", specifier = ">=1.0.16" },
@@ -2895,7 +2895,7 @@ wheels = [
 [[package]]
 name = "t2v-metrics"
 version = "0.1.0"
-source = { git = "ssh://git@github.com/nanovisionx/nanogen-evals.git?subdirectory=t2v_metrics&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
+source = { git = "https://github.com/nanovisionx/nanogen-evals.git?subdirectory=t2v_metrics&branch=main#19dfb4c2705333eb8b97e454fb354d47d1fe135b" }
 dependencies = [
     { name = "numpy", marker = "sys_platform == 'linux'" },
     { name = "opencv-python", marker = "sys_platform == 'linux'" },

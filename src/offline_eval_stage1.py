@@ -67,6 +67,10 @@ def main(args):
     #########################################################
     # Model setup
     #########################################################
+    if args.ckpt:
+        config.stage_1.ckpt = args.ckpt  # instantiate_from_config loads its EMA weights (strict)
+    if rank == 0 and not config.stage_1.ckpt and not config.stage_1.params.get("pretrained_decoder_path"):
+        logger.warning("  No --ckpt / stage_1.ckpt / pretrained_decoder_path: evaluating an UNTRAINED decoder")
     rae: RAE = instantiate_from_config(config.stage_1).to(device)
     rae.eval()
 
@@ -112,7 +116,7 @@ def main(args):
         eval_stats = evaluate_reconstruction_distributed(
             rae, ds_info.dataset, len(ds_info.dataset),
             rank=rank, world_size=world_size, device=device,
-            batch_size=batch_size, experiment_dir=experiment_name,
+            batch_size=batch_size, experiment_dir=os.path.join(eval_dir, experiment_name),
             global_step=global_step, autocast_kwargs=autocast_kwargs,
             reference_npz_path=ds_info.reference_npz,
             shared_tmpdir=config.dataset.shared_tmpdir,
@@ -134,5 +138,7 @@ if __name__ == "__main__":
                         help="Path to the config file")
     parser.add_argument("--precision", type=str, choices=["fp32", "bf16"], default="bf16",
                         help="Compute precision")
+    parser.add_argument("--ckpt", type=str, default=None,
+                        help="Stage-1 training checkpoint (ep-*.pt); its EMA weights are evaluated")
     args = parser.parse_args()
     main(args)

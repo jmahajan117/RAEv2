@@ -61,11 +61,12 @@ class SchedulerConfig:
 class DatasetConfig:
     """Dataset configuration (shared across all training)."""
     target: str = "imagenet"
-    type: str = "hf"  # ["hf", "wds"]
+    type: str = "hf"  # ["hf", "wds", "folder"]
     data_dir: str = "./data"
     split: Any = "train"
     condition_type: Optional[str] = None  # "label", "text", or "nwm"
-    shared_tmpdir: str = "~/tmp"
+    shared_tmpdir: Optional[str] = None  # eval NPZ shards; None -> <results-dir>/<exp>/eval_npzs (never $HOME)
+    images_per_class: Optional[int] = None  # ImageNet folder only: first N images of each class (300 = ImageNet-300); None = all
     # WDS-specific
     shuffle_buffer: int = 10000
     seed: int = 42
@@ -102,6 +103,7 @@ class TrainingConfig:
     clip_grad: Optional[float] = None
     log_interval: int = 100
     checkpoint_interval: int = 4
+    keep_last_checkpoints: Optional[int] = None  # keep only the newest N ep-*.pt (None = keep all)
     sample_every: int = 2500
     virtual_epoch_steps: Optional[int] = None
     grad_accum_steps: int = 1

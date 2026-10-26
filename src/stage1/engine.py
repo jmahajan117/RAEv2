@@ -78,6 +78,7 @@ def train_one_epoch(
         save_stage1_checkpoint(
             ckpt_path, global_step, epoch, ddp_model, ema_model,
             optimizer, scheduler, disc, disc_optimizer, disc_scheduler,
+            keep_last=config.training.keep_last_checkpoints,
         )
         if args.sync_checkpoints:
             sync_checkpoint_async(checkpoint_dir, logger)

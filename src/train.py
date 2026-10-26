@@ -4,6 +4,7 @@ import argparse
 import dataclasses
 import math
 import os
+from functools import partial
 
 import torch
 
@@ -73,7 +74,8 @@ def main():
     assert global_batch_size % world_size == 0, "global_batch_size must be divisible by world_size"
     micro_batch_size = global_batch_size // (world_size * config.training.grad_accum_steps)
     stage2_transform = transforms.Compose([
-        transforms.Lambda(lambda pil_image: center_crop_arr(pil_image, config.training.image_size)),
+        # partial, not lambda: the folder loader's spawn workers must pickle the transform
+        transforms.Lambda(partial(center_crop_arr, image_size=config.training.image_size)),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
     ])
@@ -256,7 +258,8 @@ def main():
     if rank == 0:
         logger.info(f"Saving final checkpoint at epoch {config.training.epochs}...")
         ckpt_path = f"{checkpoint_dir}/ep-{config.training.epochs:07d}.pt"
-        save_stage2_checkpoint(ckpt_path, global_step, config.training.epochs, ddp_model, ema_model, optimizer, scheduler)
+        save_stage2_checkpoint(ckpt_path, global_step, config.training.epochs, ddp_model, ema_model, optimizer, scheduler,
+                               keep_last=config.training.keep_last_checkpoints)
         if args.sync_checkpoints:
             sync_checkpoint_blocking(checkpoint_dir, logger)
             if eval_dir: sync_evals_blocking(eval_dir, logger)

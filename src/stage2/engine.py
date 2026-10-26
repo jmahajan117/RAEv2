@@ -98,7 +98,8 @@ def train_one_epoch(
     if config.training.checkpoint_interval > 0 and epoch % config.training.checkpoint_interval == 0 and rank == 0:
         logger.info(f"Saving checkpoint at epoch {epoch}...")
         ckpt_path = f"{checkpoint_dir}/ep-{epoch:07d}.pt"
-        save_stage2_checkpoint(ckpt_path, global_step, epoch, ddp_model, ema_model, optimizer, scheduler)
+        save_stage2_checkpoint(ckpt_path, global_step, epoch, ddp_model, ema_model, optimizer, scheduler,
+                               keep_last=config.training.keep_last_checkpoints)
         if args.sync_checkpoints:
             sync_checkpoint_async(checkpoint_dir, logger)
             if do_eval: sync_evals_async(eval_dir, logger)

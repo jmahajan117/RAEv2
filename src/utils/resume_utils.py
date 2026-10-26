@@ -25,7 +25,7 @@ def configure_experiment_dirs(args, rank) -> Tuple[str, str, logging.Logger]:
         if args.wandb:
             entity = os.environ["WANDB_ENTITY"]
             project = os.environ["WANDB_PROJECT"]
-            initialize(args, entity, experiment_name, project)
+            initialize(args, entity, experiment_name, project, run_dir=experiment_dir)
     else:
         logger = create_logger(None, 'rae')
 
