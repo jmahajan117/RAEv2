@@ -57,8 +57,10 @@ def main():
     #########################################################
     # Dataset and dataloader (unified)
     #########################################################
-    batch_size = config.training.global_batch_size // world_size if config.training.global_batch_size else config.training.batch_size
-    logger.info(f"Batch size: {batch_size}/GPU x {world_size} GPUs = {batch_size * world_size} global")
+    # batch_size is the per-GPU micro-batch; each optimizer step sees batch_size x world_size x grad_accum_steps images
+    accum_steps = config.training.grad_accum_steps
+    batch_size = config.training.global_batch_size // (world_size * accum_steps) if config.training.global_batch_size else config.training.batch_size
+    logger.info(f"Batch size: {batch_size}/GPU x {world_size} GPUs x {accum_steps} accum = {batch_size * world_size * accum_steps} global")
     dataloader_result = prepare_unified_dataloader(
         config=dataclasses.asdict(config.dataset),
         image_size=config.training.image_size,
@@ -70,7 +72,8 @@ def main():
     )
     dataloader = dataloader_result.loader
 
-    steps_per_epoch = config.training.virtual_epoch_steps if config.training.virtual_epoch_steps else len(dataloader_result)
+    # Optimizer steps (must match train_one_epoch); schedulers and GAN start epochs count these
+    steps_per_epoch = (config.training.virtual_epoch_steps or len(dataloader_result)) // accum_steps
     if steps_per_epoch == 0:
         raise RuntimeError("Dataloader returned zero batches.")
 

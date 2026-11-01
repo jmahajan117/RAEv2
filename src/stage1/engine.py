@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
+from contextlib import nullcontext
 from typing import Dict, Optional
 
 import torch
@@ -17,6 +18,16 @@ from utils.checkpoint import save_stage1_checkpoint
 from utils.logging import save_eval_to_csv
 from utils.sync_utils import sync_checkpoint_async, sync_evals_async
 from utils.train_utils import update_ema
+
+
+def _accum_groups(dataloader, accum_steps: int):
+    """Yield lists of `accum_steps` consecutive image batches (one optimizer step each); drops the remainder."""
+    group = []
+    for images, _ in dataloader:
+        group.append(images)
+        if len(group) == accum_steps:
+            yield group
+            group = []
 
 
 def train_one_epoch(
@@ -60,7 +71,9 @@ def train_one_epoch(
     decoder = ddp_model.module.decoder
     last_layer = decoder.decoder_pred.weight
 
-    steps_per_epoch = config.training.virtual_epoch_steps if config.training.virtual_epoch_steps else len(dataloader)
+    # A step is one optimizer update over grad_accum_steps micro-batches
+    accum_steps = config.training.grad_accum_steps
+    steps_per_epoch = (config.training.virtual_epoch_steps or len(dataloader)) // accum_steps
     disc_loss_fn, gen_loss_fn = select_gan_losses(config.gan.loss.disc_loss, config.gan.loss.gen_loss)
 
     gan_start_step = config.gan.loss.disc_start * steps_per_epoch
@@ -87,13 +100,12 @@ def train_one_epoch(
     #########################################################
     # Train loop
     #########################################################
-    for images, _ in dataloader:
+    for micro_batches in _accum_groups(dataloader, accum_steps):
         use_gan = global_step >= gan_start_step and config.gan.loss.disc_weight > 0.0
         train_disc = global_step >= disc_update_step and config.gan.loss.disc_weight > 0.0
         use_lpips = global_step >= lpips_start_step and config.gan.loss.perceptual_weight > 0.0
 
-        images = images.to(device, non_blocking=True)
-        real_normed = images * 2.0 - 1.0
+        micro_batches = [images.to(device, non_blocking=True) for images in micro_batches]
 
         #########################################################
         # Train generator
@@ -101,28 +113,41 @@ def train_one_epoch(
         optimizer.zero_grad(set_to_none=True)
         disc.eval()
 
-        with autocast(**autocast_kwargs):
-            recon = ddp_model(images)
-            recon_normed = recon * 2.0 - 1.0
-            rec_loss = (recon - images).abs().mean()
-            lpips_loss = lpips_model(real_normed, recon_normed) if use_lpips else rec_loss.new_zeros(())
-            recon_total = rec_loss + config.gan.loss.perceptual_weight * lpips_loss
+        # Losses below are averaged over the micro-batches (for logging)
+        rec_loss = lpips_loss = gan_loss = total_loss = adaptive_weight = 0.0
+        for i, images in enumerate(micro_batches):
+            real_normed = images * 2.0 - 1.0
+            # DDP all-reduces gradients only on the last micro-batch
+            with ddp_model.no_sync() if i < accum_steps - 1 else nullcontext():
+                with autocast(**autocast_kwargs):
+                    recon = ddp_model(images)
+                    recon_normed = recon * 2.0 - 1.0
+                    mb_rec_loss = (recon - images).abs().mean()
+                    mb_lpips_loss = lpips_model(real_normed, recon_normed) if use_lpips else mb_rec_loss.new_zeros(())
+                    recon_total = mb_rec_loss + config.gan.loss.perceptual_weight * mb_lpips_loss
 
-            if use_gan:
-                fake_aug = disc_aug.aug(recon_normed)
-                logits_fake, _ = ddp_disc(fake_aug, None)
-                gan_loss = gen_loss_fn(logits_fake)
-            else:
-                gan_loss = torch.zeros_like(recon_total)
+                    if use_gan:
+                        fake_aug = disc_aug.aug(recon_normed)
+                        logits_fake, _ = ddp_disc(fake_aug, None)
+                        mb_gan_loss = gen_loss_fn(logits_fake)
+                    else:
+                        mb_gan_loss = torch.zeros_like(recon_total)
 
-        if use_gan:
-            adaptive_weight = calculate_adaptive_weight(recon_total, gan_loss, last_layer, config.gan.loss.max_d_weight)
-            total_loss = recon_total + config.gan.loss.disc_weight * adaptive_weight * gan_loss
-        else:
-            adaptive_weight = torch.zeros_like(recon_total)
-            total_loss = recon_total
+                if use_gan:
+                    mb_adaptive_weight = calculate_adaptive_weight(recon_total, mb_gan_loss, last_layer, config.gan.loss.max_d_weight)
+                    mb_total_loss = recon_total + config.gan.loss.disc_weight * mb_adaptive_weight * mb_gan_loss
+                else:
+                    mb_adaptive_weight = torch.zeros_like(recon_total)
+                    mb_total_loss = recon_total
 
-        total_loss.backward()
+                (mb_total_loss / accum_steps).backward()
+
+            rec_loss = rec_loss + mb_rec_loss.detach() / accum_steps
+            lpips_loss = lpips_loss + mb_lpips_loss.detach() / accum_steps
+            gan_loss = gan_loss + mb_gan_loss.detach() / accum_steps
+            total_loss = total_loss + mb_total_loss.detach() / accum_steps
+            adaptive_weight = adaptive_weight + mb_adaptive_weight.detach() / accum_steps
+
         if config.training.clip_grad:
             torch.nn.utils.clip_grad_norm_(ddp_model.parameters(), config.training.clip_grad)
         optimizer.step()
@@ -140,29 +165,38 @@ def train_one_epoch(
             ddp_disc.train()
             for _ in range(config.gan.loss.disc_updates):
                 disc_optimizer.zero_grad(set_to_none=True)
-                with autocast(**autocast_kwargs):
-                    with torch.no_grad():
-                        recon_disc = ddp_model(images)
-                        recon_disc_normed = recon_disc * 2.0 - 1.0
-                    fake_detached = recon_disc_normed.clamp(-1.0, 1.0)
-                    fake_detached = torch.round((fake_detached + 1.0) * 127.5) / 127.5 - 1.0
-                    fake_input = disc_aug.aug(fake_detached)
-                    real_input = disc_aug.aug(real_normed)
-                    logits_fake, logits_real = ddp_disc(fake_input, real_input)
-                    d_loss = disc_loss_fn(logits_real, logits_fake)
-                    accuracy = (logits_real > logits_fake).float().mean()
+                d_loss = logits_real_mean = logits_fake_mean = accuracy = 0.0
+                for i, images in enumerate(micro_batches):
+                    real_normed = images * 2.0 - 1.0
+                    with ddp_disc.no_sync() if i < accum_steps - 1 else nullcontext():
+                        with autocast(**autocast_kwargs):
+                            with torch.no_grad():
+                                recon_disc = ddp_model(images)
+                                recon_disc_normed = recon_disc * 2.0 - 1.0
+                            fake_detached = recon_disc_normed.clamp(-1.0, 1.0)
+                            fake_detached = torch.round((fake_detached + 1.0) * 127.5) / 127.5 - 1.0
+                            fake_input = disc_aug.aug(fake_detached)
+                            real_input = disc_aug.aug(real_normed)
+                            logits_fake, logits_real = ddp_disc(fake_input, real_input)
+                            mb_d_loss = disc_loss_fn(logits_real, logits_fake)
 
-                d_loss.backward()
+                        (mb_d_loss / accum_steps).backward()
+
+                    d_loss = d_loss + mb_d_loss.detach() / accum_steps
+                    logits_real_mean = logits_real_mean + logits_real.detach().mean() / accum_steps
+                    logits_fake_mean = logits_fake_mean + logits_fake.detach().mean() / accum_steps
+                    accuracy = accuracy + (logits_real > logits_fake).float().mean().detach() / accum_steps
+
                 disc_optimizer.step()
 
                 disc_metrics = {
-                    "disc_loss": d_loss.detach(),
-                    "logits_real": logits_real.detach().mean(),
-                    "logits_fake": logits_fake.detach().mean(),
-                    "disc_accuracy": accuracy.detach(),
+                    "disc_loss": d_loss,
+                    "logits_real": logits_real_mean,
+                    "logits_fake": logits_fake_mean,
+                    "disc_accuracy": accuracy,
                 }
-                epoch_metrics["disc_loss"] += d_loss.detach()
-                epoch_metrics["disc_accuracy"] += accuracy.detach()
+                epoch_metrics["disc_loss"] += d_loss
+                epoch_metrics["disc_accuracy"] += accuracy
                 if disc_scheduler is not None:
                     disc_scheduler.step()
 

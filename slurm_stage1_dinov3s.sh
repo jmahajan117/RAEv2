@@ -6,12 +6,12 @@
 #SBATCH --ntasks-per-node=1         # torchrun spawns the per-GPU processes
 #SBATCH --cpus-per-task=288         # whole node: 4x 72-core Grace CPUs
 #SBATCH --gpus-per-node=4
-#SBATCH --account=bikv-dtai-gh      # <- match to a "Project" returned by the "accounts" command
+#SBATCH --account=bibd-dtai-gh      # <- match to a "Project" returned by the "accounts" command
 #SBATCH --no-requeue
 #SBATCH -t 48:00:00                 # ghx4 partition limit is 48h
 #SBATCH -e ./logs/slurm-%A_%a.err
 #SBATCH -o ./logs/slurm-%A_%a.out
-#SBATCH --array=0-2   # one array task per variant below; each task gets its own node/4-GPU allocation
+#SBATCH --array=0-0   # one array task per variant below; each task gets its own node/4-GPU allocation
 
 # Submit from the repo root (log paths are relative to it):  sbatch slurm_stage1_dinov3s.sh
 # Resubmitting after a timeout resumes each run from its latest checkpoint.
@@ -24,25 +24,23 @@ export CC=gcc
 NUM_GPUS=4
 
 RAE_ROOT=/work/hdd/bibd/jmahajan/raev2
-REF_NPZ=${RAE_ROOT}/data/imagenet-256-val.npz   # val reference for online rFID/PSNR/SSIM
 export DINOV3_CKPT_DIR=${RAE_ROOT}/pretrained_models/encoders/dinov3
 export WANDB_ENTITY=RenGen
 export WANDB_PROJECT=RAEv2-Training
 
 # Index must line up: CONFIGS[i] <-> RUN_NAMES[i]
+# (256 runs: dinov3s-{k7,k1,k11}-imagenet.yaml <-> dinov3s-{k7,k1,k11}-vitb-imagenet)
 CONFIGS=(
-    "configs/stage1/training/dinov3s-k7-imagenet.yaml"
-    "configs/stage1/training/dinov3s-k1-imagenet.yaml"
-    "configs/stage1/training/dinov3s-k11-imagenet.yaml"
+    "configs/stage1/training/dinov3s-k11-512-imagenet.yaml"
 )
 RUN_NAMES=(
-    "dinov3s-k7-vitb-imagenet"
-    "dinov3s-k1-vitb-imagenet"
-    "dinov3s-k11-vitb-imagenet"
+    "dinov3s-k11-512-vitb-imagenet"
 )
 
 CONFIG="${CONFIGS[$SLURM_ARRAY_TASK_ID]}"
 export EXPERIMENT_NAME="${RUN_NAMES[$SLURM_ARRAY_TASK_ID]}"  # checkpoint folder + W&B run name
+# Val reference for online rFID/PSNR/SSIM, as set in the config (256 vs 512 file)
+REF_NPZ=$(grep -oP '^      reference_npz: \K\S+' "${CONFIG}")
 
 echo "Array task ${SLURM_ARRAY_TASK_ID}: training on ${NUM_GPUS} GPU(s) with config ${CONFIG} (run: ${EXPERIMENT_NAME})"
 
@@ -53,7 +51,7 @@ conda activate rae
 # torch's bundled cuBLAS 12.8 makes bf16 GEMMs fail with CUBLAS_STATUS_INVALID_VALUE.
 export LD_LIBRARY_PATH=$(echo "${LD_LIBRARY_PATH:-}" | tr ':' '\n' | grep -v 'hpc_sdk/.*/math_libs' | paste -sd:)
 
-if [ ! -f "${REF_NPZ}" ]; then
+if [ -z "${REF_NPZ}" ] || [ ! -f "${REF_NPZ}" ]; then
     echo "Missing ${REF_NPZ}; build it with scripts/data/make_imagenet_ref_npz.py first" >&2
     exit 1
 fi

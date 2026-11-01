@@ -345,6 +345,16 @@ class GeneralDecoder(nn.Module):
         )
         self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
 
+    def _load_from_state_dict(self, state_dict, prefix, *args, **kwargs):
+        # decoder_pos_embed is a fixed sin-cos table, so a checkpoint trained at another resolution
+        # (different num_patches) keeps this model's table instead of failing the strict load.
+        key = prefix + "decoder_pos_embed"
+        if key in state_dict and state_dict[key].shape != self.decoder_pos_embed.shape:
+            print(f"decoder_pos_embed: checkpoint {tuple(state_dict[key].shape)} -> "
+                  f"sin-cos {tuple(self.decoder_pos_embed.shape)} for {self.num_patches} patches")
+            state_dict[key] = self.decoder_pos_embed.data
+        super()._load_from_state_dict(state_dict, prefix, *args, **kwargs)
+
     def unpatchify(self, patchified_pixel_values, original_image_size: Optional[Tuple[int, int]] = None):
         """
         Args:

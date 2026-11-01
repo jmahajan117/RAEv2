@@ -58,6 +58,11 @@ def main(args):
     autocast_kwargs = get_autocast_kwargs(args)
 
     config: Stage1Config = OmegaConf.to_object(OmegaConf.merge(OmegaConf.structured(Stage1Config), OmegaConf.load(args.config)))
+    if args.resolution:
+        # Run the RAE natively at this resolution: encoder sees (res/16)^2 tokens, decoder gets a
+        # matching sin-cos pos-embed, and eval images are center-cropped to res.
+        config.stage_1.params["resolution"] = args.resolution
+        config.training.image_size = args.resolution
 
     # Set seed
     seed = config.training.global_seed * world_size + rank
@@ -86,6 +91,9 @@ def main(args):
 
     assert config.eval is not None, "eval section is required in config"
     eval_datasets_config = normalize_eval_datasets(config.eval.datasets)
+    if args.reference_npz:
+        for ds_cfg in eval_datasets_config.values():
+            ds_cfg["reference_npz"] = args.reference_npz
     eval_datasets = prepare_eval_datasets(
         eval_datasets_config,
         image_size=config.training.image_size,
@@ -140,5 +148,9 @@ if __name__ == "__main__":
                         help="Compute precision")
     parser.add_argument("--ckpt", type=str, default=None,
                         help="Stage-1 training checkpoint (ep-*.pt); its EMA weights are evaluated")
+    parser.add_argument("--resolution", type=int, default=None,
+                        help="Override the RAE / eval image resolution (e.g. 512 for a model trained at 256)")
+    parser.add_argument("--reference-npz", type=str, default=None,
+                        help="Override every eval dataset's reference_npz (needed when --resolution changes)")
     args = parser.parse_args()
     main(args)
